@@ -18,6 +18,7 @@ class OpenStatesService:
     
     def search_bills(self, params: BillSearchParams) -> Dict[str, Any]:
         """Search for bills based on the provided parameters"""
+        # For OpenStates API v3, the correct endpoint is /bills
         url = f"{self.base_url}/bills"
         
         # Build query parameters
@@ -36,8 +37,21 @@ class OpenStatesService:
         query_params["page"] = params.page
         query_params["per_page"] = params.per_page
         
-        # Make the API request
-        response = requests.get(url, headers=self.headers, params=query_params)
+        # Print the request URL and parameters for debugging
+        print(f"Request URL: {url}")
+        print(f"Request params: {query_params}")
+        
+        # Make the API request with the API key in the header
+        headers = {"X-API-KEY": self.api_key}
+        response = requests.get(url, headers=headers, params=query_params)
+        
+        # Print response status and content for debugging
+        print(f"Response status: {response.status_code}")
+        if response.status_code != 200:
+            print(f"Response error: {response.text}")
+        else:
+            print(f"Response content: {response.text[:500]}...")
+        
         response.raise_for_status()  # Raise exception for HTTP errors
         
         return response.json()

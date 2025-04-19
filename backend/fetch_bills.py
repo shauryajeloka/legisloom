@@ -29,8 +29,16 @@ def get_or_create_keyword(db: Session, name: str):
     return keyword
 
 
-def process_bill(db: Session, bill_id: str, analyze: bool = True):
-    """Fetch a bill from OpenStates, analyze it with Claude, and store in database"""
+def process_bill(db: Session, bill_id: str, analyze: bool = True, retry_count: int = 0, max_retries: int = 3):
+    """Fetch a bill from OpenStates, analyze it with Claude, and store in database
+    
+    Args:
+        db: Database session
+        bill_id: OpenStates bill ID
+        analyze: Whether to analyze the bill with Claude
+        retry_count: Current retry attempt
+        max_retries: Maximum number of retry attempts
+    """
     try:
         print(f"Processing bill {bill_id}...")
         
@@ -40,8 +48,18 @@ def process_bill(db: Session, bill_id: str, analyze: bool = True):
             print(f"Bill {bill_id} already exists in database. Updating...")
         
         # Fetch bill data from OpenStates
-        bill_data = openstates_service.get_bill(bill_id)
-        bill_model = openstates_service.transform_bill_data(bill_data)
+        try:
+            bill_data = openstates_service.get_bill(bill_id)
+            bill_model = openstates_service.transform_bill_data(bill_data)
+        except Exception as e:
+            if "429" in str(e) and retry_count < max_retries:
+                # Rate limit hit, wait and retry with exponential backoff
+                wait_time = 2 ** retry_count * 5  # 5, 10, 20 seconds
+                print(f"Rate limit hit. Waiting {wait_time} seconds before retry {retry_count + 1}/{max_retries}...")
+                time.sleep(wait_time)
+                return process_bill(db, bill_id, analyze, retry_count + 1, max_retries)
+            else:
+                raise
         
         # Create or update bill record
         if not existing_bill:
@@ -79,6 +97,11 @@ def process_bill(db: Session, bill_id: str, analyze: bool = True):
             existing_bill.documents = bill_model.documents
             existing_bill.votes = bill_model.votes
             existing_bill.versions = bill_model.versions
+        
+        # Generate abstract if not available
+        if existing_bill.abstract == "No abstract available" and len(existing_bill.title) > 10:
+            # Use the title as a simple abstract if it's substantial
+            existing_bill.abstract = existing_bill.title
         
         # Commit changes to database
         db.commit()
@@ -121,37 +144,87 @@ def process_bill(db: Session, bill_id: str, analyze: bool = True):
         return None
 
 
-def fetch_bills(jurisdiction: str = "ca", session: str = "2023-2024", limit: int = 10):
-    """Fetch bills from OpenStates and process them"""
+def fetch_bills(jurisdiction: str = "us", session: str = "118", limit: int = None, analyze: bool = False):
+    """Fetch bills from OpenStates and process them
+    
+    Args:
+        jurisdiction: Jurisdiction code (e.g., 'us' for federal, 'ca' for California)
+        session: Legislative session (e.g., '118' for 118th Congress, '20232024' for CA 2023-2024)
+        limit: Maximum number of bills to fetch (None for all bills)
+        analyze: Whether to analyze bills with Claude AI
+    """
     try:
         # Create database session
         db = SessionLocal()
         
         try:
-            # Create search parameters
-            search_params = BillSearchParams(
-                jurisdiction=jurisdiction,
-                session=session,
-                page=1,
-                per_page=limit
-            )
-            
-            # Fetch bills from OpenStates
-            print(f"Fetching bills from {jurisdiction} for session {session}...")
-            result = openstates_service.search_bills(search_params)
-            
-            # Process each bill
+            # Initialize counters and pagination
             bills_processed = 0
-            for bill_data in result.get("results", []):
-                bill_id = bill_data.get("id")
-                if bill_id:
-                    process_bill(db, bill_id)
-                    bills_processed += 1
-                    
-                    # Add a small delay to avoid rate limiting
-                    time.sleep(1)
+            page = 1
+            per_page = 20  # OpenStates API typically uses 20 items per page
+            more_results = True
+            retry_count = 0
+            max_retries = 3
             
-            print(f"Processed {bills_processed} bills.")
+            print(f"Fetching bills from {jurisdiction} for session {session}...")
+            
+            # Continue fetching until we've processed all bills or reached the limit
+            while more_results and (limit is None or bills_processed < limit):
+                try:
+                    # Create search parameters for current page
+                    search_params = BillSearchParams(
+                        jurisdiction=jurisdiction,
+                        session=session,
+                        page=page,
+                        per_page=per_page
+                    )
+                    
+                    # Fetch bills from OpenStates
+                    print(f"Fetching page {page}...")
+                    result = openstates_service.search_bills(search_params)
+                    
+                    # Reset retry counter on successful request
+                    retry_count = 0
+                    
+                    # Process each bill on the current page
+                    results = result.get("results", [])
+                    if not results:
+                        more_results = False
+                        break
+                        
+                    print(f"Found {len(results)} bills on page {page}")
+                    
+                    for bill_data in results:
+                        bill_id = bill_data.get("id")
+                        if bill_id:
+                            process_bill(db, bill_id, analyze)
+                            bills_processed += 1
+                            
+                            # Check if we've reached the limit
+                            if limit is not None and bills_processed >= limit:
+                                break
+                            
+                            # Add a small delay to avoid rate limiting
+                            time.sleep(2)  # Increased delay to reduce rate limiting
+                    
+                    # Move to next page
+                    page += 1
+                    print(f"Processed {bills_processed} bills so far...")
+                    
+                    # Add a delay between pages to avoid rate limiting
+                    time.sleep(5)
+                    
+                except Exception as e:
+                    if "429" in str(e) and retry_count < max_retries:
+                        # Rate limit hit, wait and retry with exponential backoff
+                        retry_count += 1
+                        wait_time = 2 ** retry_count * 10  # 20, 40, 80 seconds
+                        print(f"Rate limit hit. Waiting {wait_time} seconds before retry {retry_count}/{max_retries}...")
+                        time.sleep(wait_time)
+                    else:
+                        raise
+            
+            print(f"Completed processing {bills_processed} bills.")
         finally:
             db.close()
     except Exception as e:
@@ -163,11 +236,17 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="Fetch and process bills from OpenStates")
-    parser.add_argument("--jurisdiction", type=str, default="ca", help="Jurisdiction ID (e.g., ca for California)")
-    parser.add_argument("--session", type=str, default="2023-2024", help="Legislative session")
-    parser.add_argument("--limit", type=int, default=10, help="Maximum number of bills to fetch")
+    parser.add_argument("--jurisdiction", type=str, default="us", 
+                      help="Jurisdiction ID (e.g., 'us' for federal Congress, 'ca' for California)")
+    parser.add_argument("--session", type=str, default="118", 
+                      help="Legislative session (e.g., '118' for 118th Congress, '20232024' for CA 2023-2024)")
+    parser.add_argument("--limit", type=int, default=10, 
+                      help="Maximum number of bills to fetch (use 0 for all bills)")
+    parser.add_argument("--analyze", action="store_true", 
+                      help="Analyze bills with Claude AI (requires ANTHROPIC_API_KEY)")
     
     args = parser.parse_args()
     
-    # Fetch bills
-    fetch_bills(args.jurisdiction, args.session, args.limit)
+    # Fetch bills (convert limit=0 to None for fetching all bills)
+    limit = None if args.limit == 0 else args.limit
+    fetch_bills(args.jurisdiction, args.session, limit, args.analyze)

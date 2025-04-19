@@ -82,6 +82,7 @@ class BillResponse(BillInDB):
     keywords: List[str] = []
     summary: str = ""
     ai_analysis: Optional[str] = None
+    source: Optional[str] = "database"  # Where the bill data came from: 'database' or 'openstates'
 
 
 class BillSearchParams(BaseModel):
