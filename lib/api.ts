@@ -132,7 +132,11 @@ export async function searchBills(query: string, jurisdiction?: string): Promise
  */
 export async function getBill(billId: string): Promise<Bill | null> {
   try {
-    const url = `${API_BASE_URL}/bills/${billId}`;
+    // For OpenStates IDs with slashes (ocd-bill/xxx), we need to properly encode the ID
+    const encodedBillId = encodeURIComponent(billId);
+    const url = `${API_BASE_URL}/bills/${encodedBillId}`;
+    
+    console.log(`Making API request to: ${url}`);
     const response = await fetch(url);
     
     if (!response.ok) {
@@ -152,8 +156,11 @@ export async function getBill(billId: string): Promise<Bill | null> {
  */
 export async function getBillText(billId: string): Promise<string> {
   try {
-    const url = `${API_BASE_URL}/bills/${billId}`;
+    // For OpenStates IDs with slashes (ocd-bill/xxx), we need to properly encode the ID
+    const encodedBillId = encodeURIComponent(billId);
+    const url = `${API_BASE_URL}/bills/${encodedBillId}`;
     
+    console.log(`Making bill text API request to: ${url}`);
     const response = await fetch(url, {
       method: 'POST',
       headers: {

@@ -2,31 +2,30 @@ import { type NextRequest, NextResponse } from "next/server"
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const billId = params.id
-    console.log(`Bill Details Request for ID: ${billId}`)
+    const billId = params.id;
+    // Decode the ID if it's URL encoded
+    const decodedId = decodeURIComponent(billId);
+    console.log(`Bill Details Request for ID: ${decodedId}`);
 
     // Try to fetch from OpenStates API
     const apiKey = process.env.OPENSTATES_API_KEY
 
     if (apiKey) {
       try {
-        console.log(`Attempting to fetch bill ${billId} from OpenStates API`)
-        const openstatesUrl = `https://v3.openstates.org/bills/${billId}`
+        console.log(`Attempting to fetch bill ${decodedId} from OpenStates API`)
+        const openstatesUrl = `https://v3.openstates.org/bills/${decodedId}`
         
         const response = await fetch(openstatesUrl, {
           headers: {
             "X-API-KEY": apiKey
-          },
-          // Include next parameter in the URL as an alternative way to authenticate
-          // It might not work this way, but trying both methods
-          // next: { revalidate: 3600 }
+          }
         })
 
         if (response.ok) {
           const data = await response.json()
           console.log(`Successfully fetched bill from OpenStates API`)
           
-          // Transform the OpenStates data to our format
+          // Transform the OpenStates data to our format with enhanced details
           const transformedBill = {
             id: data.id,
             title: data.title,
@@ -39,18 +38,57 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
               name: data.jurisdiction?.name || "Unknown",
               id: data.jurisdiction?.id || "unknown"
             },
+            // Extract all sponsors, not just the primary one
             primarySponsor: data.sponsors && data.sponsors.length > 0 ? {
               name: data.sponsors[0].name,
-              id: data.sponsors[0].id
-            } : {
-              name: "Unknown",
-              id: "unknown"
-            },
+              id: data.sponsors[0].id,
+              classification: data.sponsors[0].classification,
+              primary: data.sponsors[0].primary || true
+            } : null,
+            // Include all sponsors as a separate property
+            sponsors: data.sponsors && data.sponsors.length > 0 
+              ? data.sponsors.map(sponsor => ({
+                  name: sponsor.name,
+                  id: sponsor.id,
+                  classification: sponsor.classification,
+                  primary: sponsor.primary || false
+                }))
+              : [],
             actions: data.actions || [],
-            documents: data.documents || [],
-            votes: data.votes || [],
-            versions: data.versions || [],
-            updatedAt: data.updated_at || new Date().toISOString()
+            documents: data.documents && data.documents.length > 0
+              ? data.documents.map(doc => ({
+                  note: doc.note,
+                  date: doc.date,
+                  url: doc.links && doc.links.length > 0 ? doc.links[0].url : "#",
+                  links: doc.links || []
+                }))
+              : [],
+            votes: data.votes && data.votes.length > 0
+              ? data.votes.map(vote => ({
+                  date: vote.date,
+                  result: vote.result,
+                  counts: vote.counts || { yes: 0, no: 0, abstain: 0 },
+                  motion: vote.motion_text,
+                  organization: vote.organization?.name,
+                  sources: vote.sources || []
+                }))
+              : [],
+            versions: data.versions && data.versions.length > 0
+              ? data.versions.map(version => ({
+                  note: version.note,
+                  date: version.date,
+                  url: version.links && version.links.length > 0 ? version.links[0].url : "#",
+                  links: version.links || []
+                }))
+              : [],
+            sources: data.sources || [],
+            createdAt: data.created_at,
+            updatedAt: data.updated_at || new Date().toISOString(),
+            // Additional information
+            committees: data.committees || [],
+            billTextUrl: findBillTextUrl(data),
+            relatedBills: data.related_bills || [],
+            sponsorships: data.sponsorships || []
           }
           
           return NextResponse.json({ bill: transformedBill })
@@ -65,7 +103,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     }
 
     // If we couldn't fetch from the API, use mock data
-    console.log(`Using mock data for bill ${billId}`)
+    console.log(`Using mock data for bill ${decodedId}`)
     
     // Create an extended mockBills object with our new IDs from the search
     const mockBills = {
@@ -521,7 +559,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     }
 
     // Try to find the bill by OpenStates ID format first
-    const bill = mockBills[billId] || findBillByOpenstatesId(billId, mockBills)
+    const bill = mockBills[decodedId] || findBillByOpenstatesId(decodedId, mockBills)
 
     if (!bill) {
       return NextResponse.json({ error: "Bill not found" }, { status: 404 })
@@ -539,37 +577,151 @@ function findBillByOpenstatesId(openstatesId: string, mockBills: any) {
   // Look for exact match first
   for (const key in mockBills) {
     if (mockBills[key].id === openstatesId) {
-      return mockBills[key]
+      return mockBills[key];
     }
   }
   
-  // If not found, try to extract identifier parts and match
-  // OpenStates IDs often include jurisdiction, session, and bill identifier
-  // Example: ocd-bill/12fcda7f-b695-44a4-b508-5d5da4f5e070
-  // or us-117-hr-1968
-  
-  // Just return the first mock bill for demo purposes
-  // In a real implementation, we would parse the ID and match accordingly
-  const allBills = Object.values(mockBills)
-  if (allBills.length > 0) {
-    return allBills[0]
+  // For OpenStates IDs (ocd-bill format), return the first mock bill with modified ID
+  if (openstatesId.startsWith('ocd-bill/')) {
+    console.log(`OpenStates ID format detected: ${openstatesId}. Using mock data.`);
+    
+    // Get the first mock bill
+    const firstBillKey = Object.keys(mockBills)[0];
+    if (firstBillKey) {
+      // Clone the bill and update its ID
+      const firstBill = mockBills[firstBillKey];
+      return {
+        ...firstBill,
+        id: openstatesId,
+        title: `${firstBill.title} (Mock Data for ${openstatesId})`,
+      };
+    }
   }
   
-  return null
+  // Fall back to just returning the first bill
+  console.log(`Could not find bill with ID: ${openstatesId}. Using fallback mock data.`);
+  const firstBillKey = Object.keys(mockBills)[0];
+  return firstBillKey ? mockBills[firstBillKey] : null;
+}
+
+// Helper function to find a bill text URL from versions or documents
+function findBillTextUrl(bill: any): string {
+  // First check versions for text links
+  if (bill.versions && bill.versions.length > 0) {
+    for (const version of bill.versions) {
+      if (version.links && version.links.length > 0) {
+        return version.links[0].url;
+      }
+    }
+  }
+  
+  // If no version links, try documents
+  if (bill.documents && bill.documents.length > 0) {
+    for (const doc of bill.documents) {
+      if (doc.links && doc.links.length > 0) {
+        return doc.links[0].url;
+      }
+    }
+  }
+  
+  return "";
 }
 
 // API endpoint to get bill text
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const billId = params.id
+    const billId = params.id;
+    // Decode the ID if it's URL encoded
+    const decodedId = decodeURIComponent(billId);
+    console.log(`Bill Text Request for ID: ${decodedId}`);
     
-    // In a real implementation, we would fetch the actual bill text
-    // For demo purposes, return mock text
+    // Try to fetch from OpenStates API first
+    const apiKey = process.env.OPENSTATES_API_KEY;
+    
+    if (apiKey) {
+      try {
+        console.log(`Attempting to fetch bill text for ${decodedId} from OpenStates API`);
+        
+        // First get the bill to access its document or version URLs
+        const openstatesUrl = `https://v3.openstates.org/bills/${decodedId}`;
+        const response = await fetch(openstatesUrl, {
+          headers: {
+            "X-API-KEY": apiKey
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log(`Successfully fetched bill from OpenStates API, looking for text links`);
+          
+          // Try to find a text URL from versions or documents
+          let textUrl = null;
+          
+          // First check versions for text links
+          if (data.versions && data.versions.length > 0) {
+            for (const version of data.versions) {
+              if (version.links && version.links.length > 0) {
+                // Use the first link of the latest version
+                textUrl = version.links[0].url;
+                break;
+              }
+            }
+          }
+          
+          // If no version links, try documents
+          if (!textUrl && data.documents && data.documents.length > 0) {
+            for (const doc of data.documents) {
+              if (doc.links && doc.links.length > 0) {
+                // Use the first link of the latest document
+                textUrl = doc.links[0].url;
+                break;
+              }
+            }
+          }
+          
+          // If we found a URL, try to fetch the text
+          if (textUrl) {
+            console.log(`Found text URL: ${textUrl}`);
+            try {
+              const textResponse = await fetch(textUrl);
+              if (textResponse.ok) {
+                const text = await textResponse.text();
+                return NextResponse.json({ text });
+              } else {
+                console.log(`Failed to fetch text from URL: ${textResponse.status}`);
+                // Fall through to mock text if the URL fetch fails
+              }
+            } catch (textError) {
+              console.error(`Error fetching text from URL: ${textError}`);
+              // Fall through to mock text
+            }
+          } else {
+            console.log(`No text URLs found in the bill data`);
+            // Fall through to mock text
+          }
+          
+          // If we have an abstract, use that as a fallback
+          if (data.abstract) {
+            console.log(`Using bill abstract as text fallback`);
+            return NextResponse.json({ 
+              text: `# ${data.identifier}: ${data.title}\n\n## Abstract\n\n${data.abstract}` 
+            });
+          }
+        }
+      } catch (apiError) {
+        console.error(`Error fetching bill text from OpenStates API: ${apiError}`);
+        // Fall through to mock text
+      }
+    }
+    
+    // If we couldn't fetch from the API or extract text, use mock text
+    console.log(`Using mock text for bill ${decodedId}`);
+    
     const mockText = `
-# ${billId.toUpperCase()} - Sample Bill Text
+# ${decodedId.toUpperCase()} - Sample Bill Text
 
 ## SECTION 1. SHORT TITLE
-This Act may be cited as the "${billId.toUpperCase()} Sample Bill Act of 2023".
+This Act may be cited as the "${decodedId.toUpperCase()} Sample Bill Act of 2023".
 
 ## SECTION 2. FINDINGS
 Congress finds the following:
@@ -590,9 +742,9 @@ In this Act:
 There are authorized to be appropriated such sums as may be necessary to carry out this Act.
 `
     
-    return NextResponse.json({ text: mockText })
+    return NextResponse.json({ text: mockText });
   } catch (error) {
-    console.error("Error fetching bill text:", error)
-    return NextResponse.json({ error: "Failed to fetch bill text" }, { status: 500 })
+    console.error("Error fetching bill text:", error);
+    return NextResponse.json({ error: "Failed to fetch bill text" }, { status: 500 });
   }
 }
