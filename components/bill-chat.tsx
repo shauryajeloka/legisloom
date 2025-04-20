@@ -16,14 +16,38 @@ interface Message {
 interface BillChatProps {
   billContent: string
   billTitle: string
+  billIdentifier?: string
+  billSession?: string
+  billJurisdiction?: string
+  billDate?: string
+  billSponsor?: string
+  billStatus?: string
+  billData?: any // Complete bill data object
 }
 
-export default function BillChat({ billContent, billTitle }: BillChatProps) {
+export default function BillChat({ 
+  billContent, 
+  billTitle, 
+  billIdentifier, 
+  billSession, 
+  billJurisdiction, 
+  billDate, 
+  billSponsor, 
+  billStatus,
+  billData
+}: BillChatProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: `Hello! I'm your legislative assistant. Ask me anything about "${billTitle}".`,
+      content: `Hello! I'm your legislative assistant. I can answer questions about:
+
+**${billTitle}**${billIdentifier ? ` (${billIdentifier})` : ''}
+${billJurisdiction ? `Jurisdiction: ${billJurisdiction}` : ''}${billSession ? `, Session: ${billSession}` : ''}
+${billSponsor ? `Primary Sponsor: ${billSponsor}` : ''}
+${billStatus ? `Current Status: ${billStatus}` : ''}
+
+What would you like to know about this bill?`,
     },
   ])
   const [input, setInput] = useState("")
@@ -41,6 +65,33 @@ export default function BillChat({ billContent, billTitle }: BillChatProps) {
 
   // Sanitize and prepare bill content for API
   const prepareBillContent = (content: string): string => {
+    // If content is empty or very short, create a structured representation
+    if (!content || content.trim().length < 50) {
+      console.log('Bill content is empty or very short, creating structured content');
+      
+      let structuredContent = '';
+      
+      // Add basic metadata
+      structuredContent += `BILL INFORMATION:
+`;
+      if (billTitle) structuredContent += `Title: ${billTitle}
+`;
+      if (billIdentifier) structuredContent += `Identifier: ${billIdentifier}
+`;
+      if (billJurisdiction) structuredContent += `Jurisdiction: ${billJurisdiction}
+`;
+      if (billSession) structuredContent += `Session: ${billSession}
+`;
+      if (billSponsor) structuredContent += `Primary Sponsor: ${billSponsor}
+`;
+      if (billStatus) structuredContent += `Current Status: ${billStatus}
+`;
+      if (billDate) structuredContent += `Last Updated: ${billDate}
+`;
+      
+      return structuredContent;
+    }
+    
     // Limit content length to prevent issues with API
     const maxLength = 1000
     let sanitized = content
@@ -71,6 +122,21 @@ export default function BillChat({ billContent, billTitle }: BillChatProps) {
       // Prepare bill content
       const preparedBillContent = prepareBillContent(billContent)
 
+      // Create a structured bill info object for debugging
+      const billInfo = {
+        billContent: preparedBillContent,
+        billTitle,
+        billIdentifier,
+        billSession,
+        billJurisdiction,
+        billDate,
+        billSponsor,
+        billStatus,
+        completeBillData: billData // Include the complete bill data
+      };
+      
+      console.log('Sending bill info to API:', billInfo);
+      
       // Call the API to get AI response
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -79,6 +145,14 @@ export default function BillChat({ billContent, billTitle }: BillChatProps) {
         },
         body: JSON.stringify({
           billContent: preparedBillContent,
+          billTitle,
+          billIdentifier,
+          billSession,
+          billJurisdiction,
+          billDate,
+          billSponsor,
+          billStatus,
+          completeBillData: billData, // Send the complete bill data to the API
           userMessage: userMessage.substring(0, 500), // Limit user message length
         }),
       })
