@@ -19,6 +19,7 @@ interface Bill {
   jurisdiction: {
     name: string
     id: string
+    classification?: string
   }
   primarySponsor: {
     name: string
@@ -81,6 +82,38 @@ interface Bill {
     classification: string
     primary: boolean
   }[]
+  
+  // New fields
+  otherTitles?: {
+    title: string
+    note?: string
+  }[]
+  otherIdentifiers?: {
+    identifier: string
+    scheme?: string
+  }[]
+  chamber?: string
+  fromOrganization?: {
+    id: string
+    name: string
+    classification: string
+  }
+  latestActionDate?: string
+  latestActionDescription?: string
+  latestActionClassification?: string[]
+  latestPassageDate?: string
+  latestPassageVote?: {
+    id: string
+    date: string
+    result: string
+  }
+  abstracts?: {
+    abstract: string
+    note?: string
+  }[]
+  legiscanLinkAvailable?: boolean
+  legiscanLink?: string
+  stateLink?: string
 }
 
 // Format a date string
@@ -221,6 +254,17 @@ export default function BillPage() {
             </h1>
           </div>
 
+          {bill.otherTitles && bill.otherTitles.length > 0 && (
+            <div className="mb-4 text-gray-600 italic">
+              <p className="text-sm font-medium">Also known as:</p>
+              <ul className="list-disc pl-5">
+                {bill.otherTitles.map((title, idx) => (
+                  <li key={idx}>{title.title} {title.note && <span className="text-xs">({title.note})</span>}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-2 mb-4">
             <Badge variant="outline" className="bg-blue-50">
               {bill.jurisdiction.name}
@@ -228,11 +272,67 @@ export default function BillPage() {
             <Badge variant="outline" className="bg-blue-50">
               Session: {bill.session}
             </Badge>
+            {bill.chamber && (
+              <Badge variant="outline" className="bg-blue-50">
+                Chamber: {bill.chamber}
+              </Badge>
+            )}
             {bill.classification && bill.classification.map((c) => (
               <Badge key={c} variant="outline" className="bg-blue-50">
                 {c}
               </Badge>
             ))}
+          </div>
+          
+          {/* Latest action */}
+          {bill.latestActionDescription && (
+            <div className="mb-4 p-3 bg-blue-50 rounded-md">
+              <p className="font-semibold text-sm">Latest Action ({formatDate(bill.latestActionDate)}):</p>
+              <p className="mt-1">{bill.latestActionDescription}</p>
+              {bill.latestActionClassification && bill.latestActionClassification.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {bill.latestActionClassification.map((c, idx) => (
+                    <span key={idx} className="text-xs px-2 py-0.5 bg-blue-100 rounded-full text-blue-800">
+                      {c.replace(/-/g, " ")}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* External links */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            {bill.stateLink && (
+              <a 
+                href={bill.stateLink} 
+                className="text-sm text-blue-600 hover:underline flex items-center"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <FileText className="h-4 w-4 mr-1" /> Official State Page
+              </a>
+            )}
+            {bill.legiscanLink && (
+              <a 
+                href={bill.legiscanLink} 
+                className="text-sm text-blue-600 hover:underline flex items-center"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <FileText className="h-4 w-4 mr-1" /> LegiScan
+              </a>
+            )}
+            {bill.billTextUrl && (
+              <a 
+                href={bill.billTextUrl} 
+                className="text-sm text-blue-600 hover:underline flex items-center"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <FileText className="h-4 w-4 mr-1" /> Bill Text
+              </a>
+            )}
           </div>
           
           {/* Bill Status Timeline */}
@@ -277,7 +377,20 @@ export default function BillPage() {
 
           <div className="mb-6">
             <h2 className="text-xl font-semibold mb-2">Abstract</h2>
-            <p className="text-gray-700">{bill.abstract}</p>
+            
+            {bill.abstracts && bill.abstracts.length > 0 ? (
+              <div>
+                {bill.abstracts.map((abstract, idx) => (
+                  <div key={idx} className={idx > 0 ? "mt-4 pt-4 border-t" : ""}>
+                    {abstract.note && <p className="text-sm text-gray-500 mb-1">{abstract.note}:</p>}
+                    <p className="text-gray-700">{abstract.abstract}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-700">{bill.abstract}</p>
+            )}
+            
             <Button
               onClick={handleFetchBillText}
               className="mt-4 flex items-center gap-2"
@@ -359,6 +472,54 @@ export default function BillPage() {
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {bill.fromOrganization && (
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold mb-2">From Organization</h2>
+              <p className="text-gray-700">{bill.fromOrganization.name}</p>
+              {bill.fromOrganization.classification && (
+                <p className="text-gray-500 text-sm">{bill.fromOrganization.classification}</p>
+              )}
+            </div>
+          )}
+
+          {bill.otherIdentifiers && bill.otherIdentifiers.length > 0 && (
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold mb-2">Other Identifiers</h2>
+              <div className="space-y-1">
+                {bill.otherIdentifiers.map((id, idx) => (
+                  <p key={idx} className="text-gray-700">
+                    {id.identifier}
+                    {id.scheme && <span className="text-gray-500 text-sm ml-2">({id.scheme})</span>}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {bill.sources && bill.sources.length > 0 && (
+            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <h2 className="text-xl font-semibold mb-4">Data Sources</h2>
+              <ul className="space-y-2">
+                {bill.sources.map((source, idx) => (
+                  <li key={idx} className="flex items-start">
+                    <span className="text-blue-500 mr-2">•</span>
+                    <a 
+                      href={source.url}
+                      className="text-blue-600 hover:underline"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {source.note || `Source ${idx + 1}`}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-gray-500 mt-4">
+                Data provided by OpenStates API. Last updated: {formatDate(bill.updatedAt)}
+              </p>
             </div>
           )}
 

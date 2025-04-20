@@ -14,7 +14,22 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     if (apiKey) {
       try {
         console.log(`Attempting to fetch bill ${decodedId} from OpenStates API`)
-        const openstatesUrl = `https://v3.openstates.org/bills/${decodedId}`
+        
+        // Include all available additional information as per API docs
+        const includes = [
+          'sponsorships',
+          'abstracts',
+          'other_titles',
+          'other_identifiers',
+          'actions',
+          'sources',
+          'documents',
+          'versions',
+          'votes',
+          'related_bills'
+        ].join(',');
+        
+        const openstatesUrl = `https://v3.openstates.org/bills/${decodedId}?include=${includes}`
         
         const response = await fetch(openstatesUrl, {
           headers: {
@@ -37,7 +52,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
             session: data.session,
             jurisdiction: {
               name: data.jurisdiction?.name || "Unknown",
-              id: data.jurisdiction?.id || "unknown"
+              id: data.jurisdiction?.id || "unknown",
+              classification: data.jurisdiction?.classification
             },
             // Extract all sponsors, not just the primary one
             primarySponsor: data.sponsors && data.sponsors.length > 0 ? {
@@ -48,7 +64,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
             } : null,
             // Include all sponsors as a separate property
             sponsors: data.sponsors && data.sponsors.length > 0 
-              ? data.sponsors.map(sponsor => ({
+              ? data.sponsors.map((sponsor: any) => ({
                   name: sponsor.name,
                   id: sponsor.id,
                   classification: sponsor.classification,
@@ -57,7 +73,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
               : [],
             actions: data.actions || [],
             documents: data.documents && data.documents.length > 0
-              ? data.documents.map(doc => ({
+              ? data.documents.map((doc: any) => ({
                   note: doc.note,
                   date: doc.date,
                   url: doc.links && doc.links.length > 0 ? doc.links[0].url : "#",
@@ -65,7 +81,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
                 }))
               : [],
             votes: data.votes && data.votes.length > 0
-              ? data.votes.map(vote => ({
+              ? data.votes.map((vote: any) => ({
                   date: vote.date,
                   result: vote.result,
                   counts: vote.counts || { yes: 0, no: 0, abstain: 0 },
@@ -75,7 +91,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
                 }))
               : [],
             versions: data.versions && data.versions.length > 0
-              ? data.versions.map(version => ({
+              ? data.versions.map((version: any) => ({
                   note: version.note,
                   date: version.date,
                   url: version.links && version.links.length > 0 ? version.links[0].url : "#",
@@ -89,7 +105,22 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
             committees: data.committees || [],
             billTextUrl: findBillTextUrl(data),
             relatedBills: data.related_bills || [],
-            sponsorships: data.sponsorships || []
+            sponsorships: data.sponsorships || [],
+            
+            // New fields based on API documentation
+            otherTitles: data.other_titles || [],
+            otherIdentifiers: data.other_identifiers || [],
+            chamber: data.chamber,
+            fromOrganization: data.from_organization,
+            latestActionDate: data.latest_action_date,
+            latestActionDescription: data.latest_action_description,
+            latestActionClassification: data.latest_action_classification,
+            latestPassageDate: data.latest_passage_date,
+            latestPassageVote: data.latest_passage_vote,
+            abstracts: data.abstracts || [],
+            legiscanLinkAvailable: data.legiscan_link_available,
+            legiscanLink: data.legiscan_link,
+            stateLink: data.state_link
           }
           
           return NextResponse.json({ bill: transformedBill })
