@@ -634,9 +634,9 @@ export default function BillPage() {
             <div className="space-y-6">
               {bill.votes.map((vote, index) => (
                 <div key={index} className="border-b pb-4 last:border-b-0">
-                  <div className="flex justify-between mb-2">
+                  <div className="flex justify-between items-center">
                     <div>
-                      <h3 className="font-medium">Vote on {formatDate(vote.date)}</h3>
+                      <p className="text-sm">{formatDate(vote.date)}</p>
                       {vote.motion && (
                         <p className="text-sm text-gray-600">{vote.motion}</p>
                       )}
@@ -644,7 +644,7 @@ export default function BillPage() {
                         <p className="text-sm text-gray-600">By: {typeof vote.organization === 'string' ? vote.organization : vote.organization.name || 'Unknown organization'}</p>
                       )}
                     </div>
-                    <Badge variant={vote.result === "pass" ? "default" : "destructive"} className={vote.result === "pass" ? "bg-green-100 text-green-800" : ""}>
+                    <Badge variant={vote.result === "pass" ? "default" : "destructive"}>
                       {vote.result === "pass" ? "Passed" : "Failed"}
                     </Badge>
                   </div>
