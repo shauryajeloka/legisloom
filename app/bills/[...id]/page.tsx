@@ -159,9 +159,10 @@ export default function BillPage() {
         
         console.log("Bill data received:", billData);
         setBill(billData);
-      } catch (err) {
+      } catch (err: any) {
         console.error("Error fetching bill details:", err);
-        setError("An error occurred while fetching bill details. Please try again.");
+        const errorMessage = err.message || "An unknown error occurred";
+        setError(`Unable to fetch bill details. ${errorMessage}`);
       } finally {
         setLoading(false);
       }
@@ -178,9 +179,10 @@ export default function BillPage() {
       setLoadingText(true);
       const text = await getBillText(bill.id);
       setBillContent(text);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error fetching bill text:", err);
-      alert("Failed to load bill text. Please try again.");
+      const errorMessage = err.message || "Unknown error";
+      setBillContent(`Failed to load bill text: ${errorMessage}`);
     } finally {
       setLoadingText(false);
     }

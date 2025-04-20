@@ -27,7 +27,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         if (response.ok) {
           const data = await response.json();
           console.log(`Successfully fetched bill from OpenStates API`);
-          return NextResponse.json(data);
+          return NextResponse.json({ bill: data });
         } else {
           // Handle specific error codes
           const errorStatus = response.status;
@@ -83,17 +83,17 @@ function constructOpenStatesApiUrl(billId: string): string {
     'related_bills'
   ];
   
-  // Join with commas to create a single include parameter 
-  // ?include=sponsorships,abstracts,other_titles,etc.
-  const includeQueryParam = `include=${includeParams.join(',')}`;
+  // Use separate include parameters (not comma-separated)
+  // ?include=sponsorships&include=abstracts&include=other_titles, etc.
+  const includeQueryParams = includeParams.map(param => `include=${param}`).join('&');
   
   // If it's already in OpenStates format (ocd-bill), use it directly
   if (billId.startsWith('ocd-bill/')) {
-    return `https://v3.openstates.org/bills/${billId}?${includeQueryParam}`;
+    return `https://v3.openstates.org/bills/${billId}?${includeQueryParams}`;
   }
   
   // Otherwise assume it's in the jurisdiction/session/identifier format
-  return `https://v3.openstates.org/bills/${billId}?${includeQueryParam}`;
+  return `https://v3.openstates.org/bills/${billId}?${includeQueryParams}`;
 }
 
 // Helper function to find a bill text URL from versions or documents

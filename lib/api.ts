@@ -140,14 +140,21 @@ export async function getBill(billId: string): Promise<Bill | null> {
     const response = await fetch(url);
     
     if (!response.ok) {
-      throw new Error(`Error fetching bill: ${response.statusText}`);
+      const errorData = await response.json().catch(() => null);
+      const errorMessage = errorData?.error || response.statusText || 'Unknown error';
+      throw new Error(`Error fetching bill: ${errorMessage}`);
     }
     
     const data = await response.json();
+    
+    if (!data.bill) {
+      throw new Error("No bill data returned from API");
+    }
+    
     return data.bill;
   } catch (error) {
     console.error(`Error fetching bill ${billId}:`, error);
-    return null;
+    throw error; // Re-throw the error so the component can handle it
   }
 }
 
@@ -169,14 +176,21 @@ export async function getBillText(billId: string): Promise<string> {
     });
     
     if (!response.ok) {
-      throw new Error(`Error fetching bill text: ${response.statusText}`);
+      const errorData = await response.json().catch(() => null);
+      const errorMessage = errorData?.error || response.statusText || 'Unknown error';
+      throw new Error(`Error fetching bill text: ${errorMessage}`);
     }
     
     const data = await response.json();
-    return data.text || 'Bill text not available';
+    
+    if (!data.text) {
+      throw new Error("No bill text available");
+    }
+    
+    return data.text;
   } catch (error) {
     console.error(`Error fetching bill text for ${billId}:`, error);
-    return 'Error fetching bill text. Please try again later.';
+    throw error; // Re-throw so the component can handle it
   }
 }
 
