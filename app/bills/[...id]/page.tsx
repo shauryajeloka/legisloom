@@ -53,7 +53,7 @@ interface Bill {
       abstain: number
     }
     motion?: string
-    organization?: string
+    organization?: string | { name: string; id?: string; [key: string]: any }
     sources?: { url: string; note?: string }[]
   }[]
   versions: {
@@ -67,8 +67,9 @@ interface Bill {
   updatedAt: string
   committees?: {
     id: string
-    name: string
-    chamber: string
+    name: string | object
+    chamber: string | object
+    [key: string]: any
   }[]
   billTextUrl?: string
   relatedBills?: {
@@ -93,10 +94,11 @@ interface Bill {
     scheme?: string
   }[]
   chamber?: string
-  fromOrganization?: {
+  fromOrganization?: string | {
     id: string
     name: string
     classification: string
+    [key: string]: any
   }
   latestActionDate?: string
   latestActionDescription?: string
@@ -233,6 +235,22 @@ export default function BillPage() {
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6 text-center">
           <p className="text-red-500 mb-4">{error || "Bill not found"}</p>
+          {error && error.includes("Rate limit") && (
+            <div className="mb-4 p-4 bg-yellow-50 rounded-md">
+              <p>The OpenStates API has a rate limit that has been reached.</p>
+              <p className="text-sm mt-2">
+                You can try again in a few minutes, or consider signing up for an OpenStates API key at{" "}
+                <a 
+                  href="https://openstates.org/api/" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline"
+                >
+                  https://openstates.org/api/
+                </a>
+              </p>
+            </div>
+          )}
           <Button onClick={() => router.back()}>Go Back</Button>
         </div>
       </div>
@@ -440,8 +458,8 @@ export default function BillPage() {
               <ul className="space-y-1">
                 {bill.committees.map((committee, idx) => (
                   <li key={idx} className="text-gray-700">
-                    {committee.name}
-                    <span className="text-gray-500 text-sm ml-2">({committee.chamber})</span>
+                    {typeof committee.name === 'string' ? committee.name : JSON.stringify(committee.name)}
+                    <span className="text-gray-500 text-sm ml-2">({typeof committee.chamber === 'string' ? committee.chamber : JSON.stringify(committee.chamber)})</span>
                   </li>
                 ))}
               </ul>
@@ -480,8 +498,8 @@ export default function BillPage() {
           {bill.fromOrganization && (
             <div className="mb-6">
               <h2 className="text-xl font-semibold mb-2">From Organization</h2>
-              <p className="text-gray-700">{bill.fromOrganization.name}</p>
-              {bill.fromOrganization.classification && (
+              <p className="text-gray-700">{typeof bill.fromOrganization === 'string' ? bill.fromOrganization : bill.fromOrganization.name || 'Unknown organization'}</p>
+              {typeof bill.fromOrganization !== 'string' && bill.fromOrganization.classification && (
                 <p className="text-gray-500 text-sm">{bill.fromOrganization.classification}</p>
               )}
             </div>
@@ -623,7 +641,7 @@ export default function BillPage() {
                         <p className="text-sm text-gray-600">{vote.motion}</p>
                       )}
                       {vote.organization && (
-                        <p className="text-sm text-gray-600">By: {vote.organization}</p>
+                        <p className="text-sm text-gray-600">By: {typeof vote.organization === 'string' ? vote.organization : vote.organization.name || 'Unknown organization'}</p>
                       )}
                     </div>
                     <Badge variant={vote.result === "pass" ? "default" : "destructive"} className={vote.result === "pass" ? "bg-green-100 text-green-800" : ""}>

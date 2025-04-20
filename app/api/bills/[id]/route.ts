@@ -1,5 +1,14 @@
 import { type NextRequest, NextResponse } from "next/server"
 
+// Simple in-memory cache for API responses
+// This will help reduce API calls to avoid rate limits
+const cache: Record<string, { data: any; timestamp: number }> = {};
+// Cache expiration time in milliseconds (30 minutes)
+const CACHE_TTL = 30 * 60 * 1000;
+
+// Simple in-memory cache for bill text responses
+const textCache: Record<string, { text: string; timestamp: number }> = {};
+
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     // Ensure params is properly awaited
@@ -9,7 +18,13 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     const decodedId = decodeURIComponent(billId);
     console.log(`Bill Details Request for ID: ${decodedId}`);
     
-    // Try to fetch from OpenStates API first
+    // Check if we have a valid cached response
+    if (cache[decodedId] && (Date.now() - cache[decodedId].timestamp < CACHE_TTL)) {
+      console.log(`Using cached response for ${decodedId}`);
+      return NextResponse.json({ bill: cache[decodedId].data });
+    }
+    
+    // Try to fetch from OpenStates API if not cached
     const apiKey = process.env.OPENSTATES_API_KEY;
     
     if (apiKey) {
@@ -27,6 +42,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         if (response.ok) {
           const data = await response.json();
           console.log(`Successfully fetched bill from OpenStates API`);
+          cache[decodedId] = { data, timestamp: Date.now() };
           return NextResponse.json({ bill: data });
         } else {
           // Handle specific error codes
@@ -47,6 +63,13 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
               error: "Error in API request format",
               details: errorText
             }, { status: 500 });
+          } else if (errorStatus === 429) {
+            // Rate limit exceeded
+            console.error("OpenStates API rate limit exceeded");
+            return NextResponse.json({ 
+              error: "Rate limit reached for the legislative database API. Please try again later.",
+              retryAfter: response.headers.get('Retry-After') || '60'
+            }, { status: 429 });
           } else {
             return NextResponse.json({ error: `Error accessing legislative database: ${errorStatus}` }, { status: 500 });
           }
@@ -128,6 +151,12 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const decodedId = decodeURIComponent(billId);
     console.log(`Bill Text Request for ID: ${decodedId}`);
     
+    // Check if we have a valid cached response
+    if (textCache[decodedId] && (Date.now() - textCache[decodedId].timestamp < CACHE_TTL)) {
+      console.log(`Using cached text for ${decodedId}`);
+      return NextResponse.json({ text: textCache[decodedId].text });
+    }
+    
     // Try to fetch from OpenStates API first
     const apiKey = process.env.OPENSTATES_API_KEY;
     
@@ -181,6 +210,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
               const textResponse = await fetch(textUrl);
               if (textResponse.ok) {
                 const text = await textResponse.text();
+                textCache[decodedId] = { text, timestamp: Date.now() };
                 return NextResponse.json({ text });
               } else {
                 console.log(`Failed to fetch text from URL: ${textResponse.status}`);
@@ -197,8 +227,10 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
             // If we have an abstract, use that as a fallback
             if (data.abstract) {
               console.log(`Using bill abstract as text fallback`);
+              const abstractText = `# ${data.identifier}: ${data.title}\n\n## Abstract\n\n${data.abstract}`;
+              textCache[decodedId] = { text: abstractText, timestamp: Date.now() };
               return NextResponse.json({ 
-                text: `# ${data.identifier}: ${data.title}\n\n## Abstract\n\n${data.abstract}`
+                text: abstractText
               });
             } else {
               return NextResponse.json({ error: "No bill text available" }, { status: 404 });
@@ -221,8 +253,15 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
               error: "Error in API request format",
               details: errorText
             }, { status: 500 });
+          } else if (errorStatus === 429) {
+            // Rate limit exceeded
+            console.error("OpenStates API rate limit exceeded");
+            return NextResponse.json({ 
+              error: "Rate limit reached for the legislative database API. Please try again later.",
+              retryAfter: response.headers.get('Retry-After') || '60'
+            }, { status: 429 });
           } else {
-            return NextResponse.json({ error: `Error accessing legislative database: ${errorStatus}` }, { status: 500 });
+            return NextResponse.json({ error: `Error accessing legislative database: ${errorStatus}` }, { status: errorStatus });
           }
         }
       } catch (apiError: unknown) {
