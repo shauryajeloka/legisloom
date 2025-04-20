@@ -2,7 +2,8 @@ import { type NextRequest, NextResponse } from "next/server"
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const billId = params.id;
+    // Ensure params is properly awaited
+    const { id: billId } = await Promise.resolve(params);
     // Decode the ID if it's URL encoded
     const decodedId = decodeURIComponent(billId);
     console.log(`Bill Details Request for ID: ${decodedId}`);
@@ -630,7 +631,8 @@ function findBillTextUrl(bill: any): string {
 // API endpoint to get bill text
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const billId = params.id;
+    // Ensure params is properly awaited
+    const { id: billId } = await Promise.resolve(params);
     // Decode the ID if it's URL encoded
     const decodedId = decodeURIComponent(billId);
     console.log(`Bill Text Request for ID: ${decodedId}`);
