@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { ChevronLeft, ChevronUp, ChevronDown, FileText, CalendarIcon, Check, X, Archive } from "lucide-react"
 import { format } from "date-fns"
 import { getBill, getBillText } from "@/lib/api"
+import { BillAiSummary } from "@/components/bill-ai-summary"
 
 interface Bill {
   id: string
@@ -303,6 +304,13 @@ export default function BillPage() {
               </Badge>
             ))}
           </div>
+          
+          {/* AI Summary Section */}
+          <BillAiSummary 
+            billId={bill.id}
+            billTitle={bill.title}
+            billIdentifier={bill.identifier}
+          />
           
           {/* Latest action */}
           {bill.latestActionDescription && (

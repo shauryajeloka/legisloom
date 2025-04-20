@@ -8,7 +8,7 @@ import { ChevronLeft, ChevronUp, ChevronDown, FileText, CalendarIcon, Check, X, 
 import { format } from "date-fns"
 import { getBill, getBillText, getVoteCounts, saveVoteCounts } from "@/lib/api"
 import { VoteCount } from "@/lib/db"
-import { AnimatedText } from "@/components/ui/animated-text"
+import { BillAiSummary } from "@/components/bill-ai-summary"
 
 // Debug logging to track component execution
 console.log("Bill page component code is executing");
@@ -86,20 +86,11 @@ export default function BillPage() {
         </div>
         
         {/* AI Summary Section */}
-        <div className="mb-6 p-5 bg-blue-50 rounded-lg border border-blue-100">
-          <div className="flex items-center mb-3">
-            <div className="w-7 h-7 mr-2 bg-blue-600 rounded-full flex items-center justify-center">
-              <span className="text-white text-xs font-bold">AI</span>
-            </div>
-            <h2 className="text-lg font-semibold text-blue-800">AI Summary powered by Claude</h2>
-          </div>
-          
-          <AnimatedText 
-            text={`Claude, please generate a brief summary of ${bill.identifier}: ${bill.title}`}
-            className="text-gray-700 leading-relaxed"
-            speed={20}
-          />
-        </div>
+        <BillAiSummary 
+          billId={bill.id}
+          billTitle={bill.title}
+          billIdentifier={bill.identifier}
+        />
         
         {/* Abstract */}
         <div className="mb-6">
