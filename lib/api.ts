@@ -5,6 +5,8 @@
 // Use relative paths for Next.js API routes instead of localhost
 const API_BASE_URL = '/api';
 
+import { VoteCount } from './db';
+
 export interface Bill {
   id: string;
   title: string;
@@ -238,5 +240,82 @@ export async function chatWithBill(request: ChatRequest): Promise<ChatResponse> 
     return {
       answer: "I'm sorry, I couldn't process your question at this time. Please try again later."
     };
+  }
+}
+
+// Gets vote counts for a specific vote on a bill
+export async function getVoteCounts(billId: string, voteId: string): Promise<VoteCount[]> {
+  try {
+    const response = await fetch(`/api/bills/${encodeURIComponent(billId)}/votes?voteId=${encodeURIComponent(voteId)}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to fetch vote counts');
+    }
+
+    const data = await response.json();
+    return data.voteCounts;
+  } catch (error) {
+    console.error('Error fetching vote counts:', error);
+    return [];
+  }
+}
+
+// Saves vote counts for a specific vote on a bill
+export async function saveVoteCounts(billId: string, voteId: string, voteCounts: VoteCount[]): Promise<boolean> {
+  try {
+    const response = await fetch(`/api/bills/${encodeURIComponent(billId)}/votes?voteId=${encodeURIComponent(voteId)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ voteCounts })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to save vote counts');
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error saving vote counts:', error);
+    return false;
+  }
+}
+
+/**
+ * Get an AI-generated summary of a bill
+ */
+export async function getBillSummary(billId: string): Promise<string> {
+  try {
+    // For OpenStates IDs with slashes (ocd-bill/xxx), we need to properly encode the ID
+    const encodedBillId = encodeURIComponent(billId);
+    const url = `${API_BASE_URL}/bills/${encodedBillId}/summary`;
+    
+    console.log(`Making bill summary API request to: ${url}`);
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      const errorMessage = errorData?.error || response.statusText || 'Unknown error';
+      throw new Error(`Error fetching bill summary: ${errorMessage}`);
+    }
+    
+    const data = await response.json();
+    
+    if (!data.summary) {
+      throw new Error("No summary available");
+    }
+    
+    return data.summary;
+  } catch (error) {
+    console.error(`Error fetching bill summary for ${billId}:`, error);
+    return "Unable to generate a summary at this time.";
   }
 }

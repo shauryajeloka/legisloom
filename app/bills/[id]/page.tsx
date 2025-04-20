@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ChevronLeft, ChevronUp, ChevronDown, FileText, CalendarIcon, Check, X, Archive } from "lucide-react"
 import { format } from "date-fns"
-import { getBill, getBillText } from "@/lib/api"
+import { getBill, getBillText, getVoteCounts, saveVoteCounts, getBillSummary } from "@/lib/api"
+import { VoteCount } from "@/lib/db"
+import { AnimatedText } from "@/components/ui/animated-text"
 
 interface Bill {
   id: string
@@ -34,6 +36,7 @@ interface Bill {
     note: string
   }[]
   votes: {
+    vote_id?: string
     date: string
     result: string
     counts: {
@@ -48,6 +51,17 @@ interface Bill {
     date: string
   }[]
   updatedAt: string
+}
+
+interface Vote {
+  vote_id?: string;
+  date: string;
+  result: string;
+  counts: {
+    yes: number;
+    no: number;
+    abstain: number;
+  }
 }
 
 // Format a date string
@@ -69,6 +83,11 @@ export default function BillPage() {
   const [historyExpanded, setHistoryExpanded] = useState(false)
   const [billContent, setBillContent] = useState<string>("")
   const [loadingText, setLoadingText] = useState(false)
+  const [voteCounts, setVoteCounts] = useState<Record<string, VoteCount[]>>({});
+  const [isVoting, setIsVoting] = useState(false);
+  const [selectedVoteId, setSelectedVoteId] = useState<string>("");
+  const [summary, setSummary] = useState<string>("");
+  const [loadingSummary, setLoadingSummary] = useState(false);
 
   useEffect(() => {
     async function fetchBillData() {
@@ -140,6 +159,105 @@ export default function BillPage() {
     return matching.length > 0 ? matching[0] : null;
   };
 
+  // Fetch vote counts when votes change
+  useEffect(() => {
+    async function fetchVoteCounts() {
+      if (!bill || !bill.votes || bill.votes.length === 0) return;
+      
+      const voteCountsData: Record<string, VoteCount[]> = {};
+      
+      for (const vote of bill.votes) {
+        // Use vote_id if available, otherwise create a unique ID based on date
+        const voteId = vote.vote_id || `vote-${vote.date}-${vote.result}`;
+        
+        try {
+          const counts = await getVoteCounts(bill.id, voteId);
+          if (counts && counts.length > 0) {
+            voteCountsData[voteId] = counts;
+          }
+        } catch (error) {
+          console.error(`Error fetching vote counts for vote ${voteId}:`, error);
+        }
+      }
+      
+      setVoteCounts(voteCountsData);
+    }
+    
+    fetchVoteCounts();
+  }, [bill]);
+  
+  // Handle voting
+  const handleVote = async (voteId: string, option: string) => {
+    if (!bill) return;
+    
+    setIsVoting(true);
+    setSelectedVoteId(voteId);
+    
+    try {
+      // Get current vote counts
+      let currentCounts = voteCounts[voteId] || [];
+      
+      // Find and update the count for the selected option
+      let optionFound = false;
+      const updatedCounts = currentCounts.map(count => {
+        if (count.option === option) {
+          optionFound = true;
+          return { ...count, value: count.value + 1 };
+        }
+        return count;
+      });
+      
+      // If option not found, add it
+      if (!optionFound) {
+        updatedCounts.push({ option, value: 1 });
+      }
+      
+      // Save updated vote counts
+      const success = await saveVoteCounts(bill.id, voteId, updatedCounts);
+      
+      if (success) {
+        // Update local state
+        setVoteCounts(prev => ({
+          ...prev,
+          [voteId]: updatedCounts
+        }));
+      }
+    } catch (error) {
+      console.error('Error voting:', error);
+    } finally {
+      setIsVoting(false);
+      setSelectedVoteId("");
+    }
+  };
+  
+  // Get vote counts for a specific vote and option
+  const getVoteCountForOption = (voteId: string, option: string): number => {
+    if (!voteCounts[voteId]) return 0;
+    
+    const count = voteCounts[voteId].find(c => c.option === option);
+    return count ? count.value : 0;
+  };
+
+  // Fetch bill summary
+  useEffect(() => {
+    async function fetchBillSummary() {
+      if (!bill) return;
+      
+      try {
+        setLoadingSummary(true);
+        const summaryText = await getBillSummary(bill.id);
+        setSummary(summaryText);
+      } catch (error) {
+        console.error('Error fetching bill summary:', error);
+        setSummary("Unable to generate a summary at this time.");
+      } finally {
+        setLoadingSummary(false);
+      }
+    }
+    
+    fetchBillSummary();
+  }, [bill]);
+
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-8 flex justify-center">
@@ -198,6 +316,33 @@ export default function BillPage() {
               </Badge>
             ))}
           </div>
+          
+          {/* AI Summary Section */}
+          {(loadingSummary || summary) && (
+            <div className="my-4 p-5 bg-blue-50 rounded-lg border border-blue-100">
+              <div className="flex items-center mb-2">
+                <div className="w-6 h-6 mr-2 bg-blue-600 rounded-full flex items-center justify-center">
+                  <span className="text-white text-xs font-bold">AI</span>
+                </div>
+                <h2 className="text-lg font-semibold text-blue-800">AI Summary</h2>
+              </div>
+              
+              {loadingSummary ? (
+                <div className="flex items-center space-x-2 text-gray-500">
+                  <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+                  <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse delay-75"></div>
+                  <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse delay-150"></div>
+                  <span className="ml-1">Generating summary...</span>
+                </div>
+              ) : (
+                <AnimatedText 
+                  text={summary} 
+                  className="text-gray-700 leading-relaxed"
+                  speed={20}
+                />
+              )}
+            </div>
+          )}
           
           {/* Bill Status Timeline */}
           <div className="my-6 py-4 border-t border-b">
@@ -319,30 +464,68 @@ export default function BillPage() {
           <div className="bg-white rounded-lg shadow-md p-6 mb-6">
             <h2 className="text-xl font-semibold mb-4">Votes</h2>
             <div className="space-y-6">
-              {bill.votes.map((vote, index) => (
-                <div key={index} className="border-b pb-4 last:border-b-0">
-                  <div className="flex justify-between mb-2">
-                    <h3 className="font-medium">Vote on {formatDate(vote.date)}</h3>
-                    <Badge variant={vote.result === "pass" ? "default" : "destructive"}>
-                      {vote.result === "pass" ? "Passed" : "Failed"}
-                    </Badge>
+              {bill.votes.map((vote, index) => {
+                // Create a vote ID if not present
+                const voteId = vote.vote_id || `vote-${vote.date}-${vote.result}`;
+                
+                return (
+                  <div key={index} className="border-b pb-4 last:border-b-0">
+                    <div className="flex justify-between mb-2">
+                      <h3 className="font-medium">Vote on {formatDate(vote.date)}</h3>
+                      <Badge variant={vote.result === "pass" ? "default" : "destructive"}>
+                        {vote.result === "pass" ? "Passed" : "Failed"}
+                      </Badge>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4 mt-3">
+                      <div className="bg-green-50 p-3 rounded text-center">
+                        <div className="text-lg font-semibold text-green-600">
+                          {vote.counts.yes + getVoteCountForOption(voteId, "yes")}
+                        </div>
+                        <div className="text-xs text-gray-600 mb-2">Yes</div>
+                        <Button 
+                          size="sm"
+                          variant="outline"
+                          className="w-full text-green-600 border-green-300 hover:bg-green-100"
+                          onClick={() => handleVote(voteId, "yes")}
+                          disabled={isVoting && selectedVoteId === voteId}
+                        >
+                          {isVoting && selectedVoteId === voteId ? "Voting..." : "Vote Yes"}
+                        </Button>
+                      </div>
+                      <div className="bg-red-50 p-3 rounded text-center">
+                        <div className="text-lg font-semibold text-red-600">
+                          {vote.counts.no + getVoteCountForOption(voteId, "no")}
+                        </div>
+                        <div className="text-xs text-gray-600 mb-2">No</div>
+                        <Button 
+                          size="sm"
+                          variant="outline"
+                          className="w-full text-red-600 border-red-300 hover:bg-red-100"
+                          onClick={() => handleVote(voteId, "no")}
+                          disabled={isVoting && selectedVoteId === voteId}
+                        >
+                          {isVoting && selectedVoteId === voteId ? "Voting..." : "Vote No"}
+                        </Button>
+                      </div>
+                      <div className="bg-gray-50 p-3 rounded text-center">
+                        <div className="text-lg font-semibold text-gray-600">
+                          {vote.counts.abstain + getVoteCountForOption(voteId, "abstain")}
+                        </div>
+                        <div className="text-xs text-gray-600 mb-2">Abstain</div>
+                        <Button 
+                          size="sm"
+                          variant="outline"
+                          className="w-full text-gray-600 border-gray-300 hover:bg-gray-100"
+                          onClick={() => handleVote(voteId, "abstain")}
+                          disabled={isVoting && selectedVoteId === voteId}
+                        >
+                          {isVoting && selectedVoteId === voteId ? "Voting..." : "Abstain"}
+                        </Button>
+                      </div>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-4 mt-3">
-                    <div className="bg-green-50 p-3 rounded text-center">
-                      <div className="text-lg font-semibold text-green-600">{vote.counts.yes}</div>
-                      <div className="text-xs text-gray-600">Yes</div>
-                    </div>
-                    <div className="bg-red-50 p-3 rounded text-center">
-                      <div className="text-lg font-semibold text-red-600">{vote.counts.no}</div>
-                      <div className="text-xs text-gray-600">No</div>
-                    </div>
-                    <div className="bg-gray-50 p-3 rounded text-center">
-                      <div className="text-lg font-semibold text-gray-600">{vote.counts.abstain}</div>
-                      <div className="text-xs text-gray-600">Abstain</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
