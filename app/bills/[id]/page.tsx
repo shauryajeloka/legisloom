@@ -323,7 +323,7 @@ export default function BillPage() {
                 <div key={index} className="border-b pb-4 last:border-b-0">
                   <div className="flex justify-between mb-2">
                     <h3 className="font-medium">Vote on {formatDate(vote.date)}</h3>
-                    <Badge variant={vote.result === "pass" ? "default" : "destructive"} className={vote.result === "pass" ? "bg-green-100 text-green-800" : ""}>
+                    <Badge variant={vote.result === "pass" ? "default" : "destructive"}>
                       {vote.result === "pass" ? "Passed" : "Failed"}
                     </Badge>
                   </div>
