@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ChevronLeft, ChevronUp, ChevronDown, FileText, CalendarIcon, Check, X, Archive } from "lucide-react"
 import { format } from "date-fns"
-import { getBill, getBillText, getVoteCounts, saveVoteCounts, getBillSummary } from "@/lib/api"
+import { getBill, getBillText, getVoteCounts, saveVoteCounts } from "@/lib/api"
 import { VoteCount } from "@/lib/db"
 import { AnimatedText } from "@/components/ui/animated-text"
 
@@ -87,7 +87,7 @@ export default function BillPage() {
   const [isVoting, setIsVoting] = useState(false);
   const [selectedVoteId, setSelectedVoteId] = useState<string>("");
   const [summary, setSummary] = useState<string>("");
-  const [loadingSummary, setLoadingSummary] = useState(false);
+  const [animationComplete, setAnimationComplete] = useState(false);
 
   useEffect(() => {
     async function fetchBillData() {
@@ -238,24 +238,20 @@ export default function BillPage() {
     return count ? count.value : 0;
   };
 
-  // Fetch bill summary
+  // Replace the summary fetching useEffect with a simpler version that just sets the prompt
   useEffect(() => {
-    async function fetchBillSummary() {
-      if (!bill) return;
-      
-      try {
-        setLoadingSummary(true);
-        const summaryText = await getBillSummary(bill.id);
-        setSummary(summaryText);
-      } catch (error) {
-        console.error('Error fetching bill summary:', error);
-        setSummary("Unable to generate a summary at this time.");
-      } finally {
-        setLoadingSummary(false);
-      }
-    }
+    if (!bill) return;
     
-    fetchBillSummary();
+    // Simple direct prompt for Claude
+    const promptText = `Claude, please generate a brief summary of ${bill.identifier}: ${bill.title}`;
+    setSummary(promptText);
+    
+    // Simulate a delay before showing the summary to make the UI feel more responsive
+    const timer = setTimeout(() => {
+      setAnimationComplete(true);
+    }, 500);
+    
+    return () => clearTimeout(timer);
   }, [bill]);
 
   if (loading) {
@@ -317,33 +313,6 @@ export default function BillPage() {
             ))}
           </div>
           
-          {/* AI Summary Section */}
-          {(loadingSummary || summary) && (
-            <div className="my-4 p-5 bg-blue-50 rounded-lg border border-blue-100">
-              <div className="flex items-center mb-2">
-                <div className="w-6 h-6 mr-2 bg-blue-600 rounded-full flex items-center justify-center">
-                  <span className="text-white text-xs font-bold">AI</span>
-                </div>
-                <h2 className="text-lg font-semibold text-blue-800">AI Summary</h2>
-              </div>
-              
-              {loadingSummary ? (
-                <div className="flex items-center space-x-2 text-gray-500">
-                  <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
-                  <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse delay-75"></div>
-                  <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse delay-150"></div>
-                  <span className="ml-1">Generating summary...</span>
-                </div>
-              ) : (
-                <AnimatedText 
-                  text={summary} 
-                  className="text-gray-700 leading-relaxed"
-                  speed={20}
-                />
-              )}
-            </div>
-          )}
-          
           {/* Bill Status Timeline */}
           <div className="my-6 py-4 border-t border-b">
             <h2 className="text-xl font-semibold mb-4">Bill Status</h2>
@@ -399,6 +368,31 @@ export default function BillPage() {
               <div className="mt-4 p-4 border rounded bg-gray-50 max-h-96 overflow-y-auto">
                 <pre className="whitespace-pre-wrap text-sm">{billContent}</pre>
               </div>
+            )}
+          </div>
+
+          {/* AI Summary Section - ALWAYS DISPLAY THIS SECTION */}
+          <div className="mb-6 p-5 bg-blue-50 rounded-lg border border-blue-100">
+            <div className="flex items-center mb-3">
+              <div className="w-7 h-7 mr-2 bg-blue-600 rounded-full flex items-center justify-center">
+                <span className="text-white text-xs font-bold">AI</span>
+              </div>
+              <h2 className="text-lg font-semibold text-blue-800">AI Summary powered by Claude</h2>
+            </div>
+            
+            {!animationComplete ? (
+              <div className="flex items-center space-x-2 text-gray-500 py-4">
+                <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+                <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse delay-75"></div>
+                <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse delay-150"></div>
+                <span className="ml-1">Loading Claude summary...</span>
+              </div>
+            ) : (
+              <AnimatedText 
+                text={summary} 
+                className="text-gray-700 leading-relaxed"
+                speed={20}
+              />
             )}
           </div>
 

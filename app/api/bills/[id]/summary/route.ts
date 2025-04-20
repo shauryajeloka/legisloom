@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateBillSummary } from '@/lib/claude';
-import { getBill, getBillText } from '@/lib/api';
 import db from '@/lib/db';
 
 // Cache for bill summaries
@@ -65,39 +64,25 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const billId = decodeURIComponent(params.id);
+    const { id } = params;
+    const billId = decodeURIComponent(id);
+    
+    console.log(`Processing summary request for bill: ${billId}`);
     
     // Check cache first
     const cachedSummary = getSummaryFromCache(billId);
     if (cachedSummary) {
+      console.log(`Returning cached summary for bill: ${billId}`);
       return NextResponse.json({ summary: cachedSummary });
     }
     
-    // Fetch bill details
-    const bill = await getBill(billId);
+    // Extract just the bill ID and title from the URL
+    // Example: ocd-bill/123-abc -> "Bill 123-abc"
+    const simpleBillId = billId.split('/').pop() || billId;
+    const billName = `Bill ${simpleBillId}`;
     
-    if (!bill) {
-      return NextResponse.json(
-        { error: 'Bill not found' },
-        { status: 404 }
-      );
-    }
-    
-    // Try to get bill text if available
-    let billText = '';
-    try {
-      billText = await getBillText(billId);
-    } catch (error) {
-      console.warn(`Couldn't fetch bill text for ${billId}, continuing with abstract only`);
-    }
-    
-    // Generate summary using Claude
-    const summary = await generateBillSummary(
-      bill.identifier,
-      bill.title,
-      billText,
-      bill.abstract
-    );
+    console.log(`Generating Claude summary for: ${billName}`);
+    const summary = await generateBillSummary(billName, "");
     
     // Cache the summary
     cacheSummary(billId, summary);

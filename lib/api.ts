@@ -296,6 +296,8 @@ export async function getBillSummary(billId: string): Promise<string> {
   try {
     // For OpenStates IDs with slashes (ocd-bill/xxx), we need to properly encode the ID
     const encodedBillId = encodeURIComponent(billId);
+    
+    // Use absolute URL format for fetch
     const url = `${API_BASE_URL}/bills/${encodedBillId}/summary`;
     
     console.log(`Making bill summary API request to: ${url}`);
