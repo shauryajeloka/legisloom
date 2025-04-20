@@ -6,29 +6,71 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ChevronLeft, ChevronUp, ChevronDown, FileText, CalendarIcon, Check, X, Archive } from "lucide-react"
 import { format } from "date-fns"
-import { getBill, getBillText, getVoteCounts, saveVoteCounts } from "@/lib/api"
-import { VoteCount } from "@/lib/db"
+import { getBill, getBillText } from "@/lib/api"
 import { BillAiSummary } from "@/components/bill-ai-summary"
+import { AnimatedText } from "@/components/ui/animated-text"
+import ChatButton from "@/components/chat-button"
 
 // Debug logging to track component execution
 console.log("Bill page component code is executing");
 
-// Instead of Bill interface, use a simpler version
-type SimpleBill = any;
+// Define Bill type
+type Bill = any;
 
-// Simplified function for date formatting
-const formatDate = (dateString: string | undefined) => dateString ? format(new Date(dateString), "MMM d, yyyy") : "Unknown";
+// Helper function to get the URL of the latest version
+const getLatestVersionUrl = (bill: Bill): string | null => {
+  if (bill?.versions && bill.versions.length > 0) {
+    // Sort versions by date descending (assuming date format is parseable)
+    const sortedVersions = [...bill.versions]
+      .filter(v => v.url) // Ensure URL exists
+      .sort((a, b) => {
+        try {
+          // Handle potential invalid date strings
+          const dateA = new Date(a.date).getTime();
+          const dateB = new Date(b.date).getTime();
+          if (isNaN(dateA) || isNaN(dateB)) return 0; // Don't sort if dates are invalid
+          return dateB - dateA;
+        } catch (e) {
+          return 0;
+        }
+      });
+
+    // Return the URL of the latest version if available
+    if (sortedVersions.length > 0) {
+      return sortedVersions[0].url;
+    }
+  }
+
+  // Fallback: Use the first document URL if versions are empty or have no valid URLs
+  if (bill?.documents && bill.documents.length > 0 && bill.documents[0].url) {
+    return bill.documents[0].url;
+  }
+
+  return null; // Return null if no suitable URL is found
+};
+
+// Format a date string
+const formatDate = (dateString: string | undefined) => {
+  if (!dateString) return "Unknown date";
+  try {
+    return format(new Date(dateString), "MMM d, yyyy");
+  } catch (e) {
+    return dateString || "Unknown"; // Return original string if parsing fails
+  }
+};
 
 export default function BillPage() {
   // Basic state setup
   const router = useRouter()
   const params = useParams()
-  const [bill, setBill] = useState<SimpleBill | null>(null)
+  const [bill, setBill] = useState<Bill | null>(null)
+  const [billText, setBillText] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  
-  // Fetch bill data on component mount
+  const [error, setError] = useState<string | null>(null)
+  const [historyExpanded, setHistoryExpanded] = useState(false)
+
   useEffect(() => {
-    const fetchBill = async () => {
+    const fetchBillData = async () => {
       try {
         setLoading(true)
         
@@ -43,15 +85,55 @@ export default function BillPage() {
         setBill(data);
       } catch (error) {
         console.error("Error fetching bill:", error);
+        setError("Failed to load bill data");
       } finally {
         setLoading(false)
       }
     }
     
-    fetchBill()
-  }, [params.id])
+    fetchBillData();
+  }, [params.id]);
+
+  // Fetch full bill text when bill is loaded
+  useEffect(() => {
+    async function fetchText() {
+      if (bill?.id) {
+        try {
+          const text = await getBillText(bill.id);
+          setBillText(text);
+        } catch (e) {
+          setBillText(null); // fallback to abstract if error
+        }
+      }
+    }
+    fetchText();
+  }, [bill]);
   
-  // If loading, show loading UI
+  // Count how many of each classification type exists in the actions
+  const getStatusCounts = (bill: Bill) => {
+    if (!bill?.actions) return { introduction: 0, passage: 0, signed: 0 };
+    
+    return bill.actions.reduce((counts, action) => {
+      if (action.classification.includes("introduction")) counts.introduction++;
+      if (action.classification.includes("passage")) counts.passage++;
+      if (action.classification.includes("executive-signature")) counts.signed++;
+      return counts;
+    }, { introduction: 0, passage: 0, signed: 0 });
+  };
+  
+  // Get the latest action of each type
+  const getLatestAction = (bill: Bill, type: string) => {
+    if (!bill?.actions) return null;
+    
+    const matching = bill.actions
+      .filter(action => action.classification.includes(type))
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    return matching.length > 0 ? matching[0] : null;
+  };
+
+  // Get the URL for the button
+  const latestVersionUrl = bill ? getLatestVersionUrl(bill) : null;
   if (loading) {
     return (
       <div className="container p-8">
@@ -95,7 +177,19 @@ export default function BillPage() {
         {/* Abstract */}
         <div className="mb-6">
           <h2 className="text-xl font-semibold mb-2">Abstract</h2>
-          <p>{bill.abstract}</p>
+          <p className="text-gray-700">{bill.abstract}</p>
+          {latestVersionUrl && (
+            <Button 
+              onClick={() => {
+                console.log("Opening URL:", latestVersionUrl); // Log the URL
+                window.open(latestVersionUrl, '_blank', 'noopener,noreferrer')
+              }}
+              variant="outline"
+              className="mt-4"
+            >
+              <FileText className="h-4 w-4 mr-2" /> View Full Text
+            </Button>
+          )}
         </div>
         
         {/* Bill meta information */}
@@ -109,7 +203,6 @@ export default function BillPage() {
               <li><strong>Last Updated:</strong> {formatDate(bill.updatedAt)}</li>
             </ul>
           </div>
-          
           {bill.subject && bill.subject.length > 0 && (
             <div>
               <h2 className="text-xl font-semibold mb-2">Subjects</h2>
@@ -136,7 +229,56 @@ export default function BillPage() {
             </ul>
           </div>
         )}
+
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">Legislative History</h2>
+            <Button variant="ghost" onClick={() => setHistoryExpanded(!historyExpanded)}>
+              {historyExpanded ? (
+                <>
+                  <ChevronUp className="h-4 w-4 mr-2" />
+                  Collapse
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-4 w-4 mr-2" />
+                  Expand
+                </>
+              )}
+            </Button>
+          </div>
+
+          <div className={`${historyExpanded ? "" : "max-h-96 overflow-y-auto"}`}>
+            <div className="relative">
+              <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200" />
+              <ul className="space-y-6">
+                {bill.actions?.map((action, index) => (
+                  <li key={index} className="ml-10 relative">
+                    <div className="absolute -left-6 mt-1.5 w-3 h-3 rounded-full bg-blue-500" />
+                    <div className="flex flex-col">
+                      <span className="text-sm text-gray-500">{formatDate(action.date)}</span>
+                      <span className="font-medium">{action.description}</span>
+                      {action.classification.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {action.classification.map((c) => (
+                            <span key={c} className="text-xs px-2 py-0.5 bg-gray-100 rounded-full text-gray-600">
+                              {c.replace(/-/g, " ")}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
       </div>
+      <ChatButton 
+        billContent={billText || bill?.abstract || "No abstract available."}
+        billTitle={bill?.title || "Bill Details"}
+      />
     </div>
   )
 }
