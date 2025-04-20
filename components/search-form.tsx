@@ -8,36 +8,59 @@ import { Button } from "@/components/ui/button"
 import { Search } from "lucide-react"
 import { useRouter } from "next/navigation"
 
-// Sample bill suggestions for autocomplete
-const sampleBills = [
-  { id: "hb-1082", identifier: "HB 1082", title: "Clean Energy Infrastructure Investment Act" },
-  { id: "sb-349", identifier: "SB 349", title: "Education Funding and Teacher Compensation Reform" },
-  { id: "hb-721", identifier: "HB 721", title: "Healthcare Price Transparency and Patient Protection Act" },
-  { id: "sb-514", identifier: "SB 514", title: "Small Business Tax Relief and Economic Recovery Act" },
-  { id: "hb-892", identifier: "HB 892", title: "Affordable Housing Development and Zoning Reform Act" },
-]
+interface BillSuggestion {
+  id: string
+  identifier: string
+  title: string
+}
 
 export default function SearchForm() {
   const [searchQuery, setSearchQuery] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [suggestions, setSuggestions] = useState<typeof sampleBills>([])
+  const [suggestions, setSuggestions] = useState<BillSuggestion[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const router = useRouter()
   const suggestionsRef = useRef<HTMLDivElement>(null)
+  const [typingTimeout, setTypingTimeout] = useState<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
-    // Filter suggestions based on search query
-    if (searchQuery.trim().length > 0) {
-      const filtered = sampleBills.filter(
-        (bill) =>
-          bill.identifier.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          bill.title.toLowerCase().includes(searchQuery.toLowerCase()),
-      )
-      setSuggestions(filtered)
-      setShowSuggestions(true)
+    // Clear the previous timeout
+    if (typingTimeout) {
+      clearTimeout(typingTimeout)
+    }
+
+    // Set a timeout to avoid making API calls on every keystroke
+    if (searchQuery.trim().length > 1) {
+      const timeout = setTimeout(async () => {
+        setIsLoading(true)
+        try {
+          const response = await fetch(`/api/bills/search?query=${encodeURIComponent(searchQuery)}`)
+          if (response.ok) {
+            const data = await response.json()
+            if (data.results && Array.isArray(data.results)) {
+              // Limit to first 5 results for suggestions
+              setSuggestions(data.results.slice(0, 5).map((bill: any) => ({
+                id: bill.id,
+                identifier: bill.identifier,
+                title: bill.title
+              })))
+              setShowSuggestions(true)
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching suggestions:", error)
+        } finally {
+          setIsLoading(false)
+        }
+      }, 300)
+      setTypingTimeout(timeout)
     } else {
       setSuggestions([])
       setShowSuggestions(false)
+    }
+
+    return () => {
+      if (typingTimeout) clearTimeout(typingTimeout)
     }
   }, [searchQuery])
 
@@ -80,7 +103,6 @@ export default function SearchForm() {
           </a>
           . Search for bills by keyword, bill number, or topic to get detailed information from state legislatures.
         </p>
-        <p className="text-sm text-amber-600 italic mt-1">Note: Using mock data for demonstration purposes.</p>
       </div>
 
       <div className="relative">
@@ -92,7 +114,7 @@ export default function SearchForm() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="flex-1"
-              onFocus={() => searchQuery.trim().length > 0 && setShowSuggestions(true)}
+              onFocus={() => searchQuery.trim().length > 1 && setShowSuggestions(true)}
             />
             {showSuggestions && suggestions.length > 0 && (
               <div
